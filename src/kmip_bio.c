@@ -1122,7 +1122,7 @@ int kmip_bio_create_symmetric_key_with_context(KMIP *ctx, BIO *bio,
         {
             TextString *unique_identifier = pld->unique_identifier;
 
-            char *result_id = ctx->calloc_func(ctx->state, 1, unique_identifier->size);
+            char *result_id = ctx->calloc_func(ctx->state, 1, unique_identifier->size + 1);
             *id_size = unique_identifier->size;
             for(int i = 0; i < *id_size; i++)
             {
@@ -2351,4 +2351,249 @@ int kmip_bio_get_attributes_with_context(KMIP *ctx, BIO *bio, char *uuid, enum a
     response = NULL;
 
     return(result_status);
+}
+
+
+int kmip_bio_rekey_symmetric_key_with_context(KMIP *ctx, BIO *bio,
+                                            char *uuid, int uuid_size, int offset,
+                                            TemplateAttribute *template_attribute,
+                                            char **rekey_uuid, int *rekey_uuid_size)
+{
+    if(ctx == NULL || bio == NULL || rekey_uuid == NULL || rekey_uuid_size == NULL)
+    {
+        return(KMIP_ARG_INVALID);
+    }
+
+    if( uuid && uuid_size <= 0)
+    {
+        return(KMIP_ARG_INVALID);
+    }
+
+    /* Set up the initial encoding buffer. */
+    size_t buffer_blocks = 1;
+    size_t buffer_block_size = 1024;
+    size_t buffer_total_size = buffer_blocks * buffer_block_size;
+
+    uint8 *encoding = ctx->calloc_func(
+        ctx->state,
+        buffer_blocks,
+        buffer_block_size);
+    if(encoding == NULL)
+    {
+        return(KMIP_MEMORY_ALLOC_FAILED);
+    }
+    kmip_set_buffer(ctx, encoding, buffer_total_size);
+
+    /* Build the request message. */
+    ProtocolVersion pv = {0};
+    kmip_init_protocol_version(&pv, ctx->version);
+
+    RequestHeader rh = {0};
+    kmip_init_request_header(&rh);
+
+    rh.protocol_version = &pv;
+    rh.maximum_response_size = ctx->max_message_size;
+    rh.time_stamp = time(NULL);
+    rh.batch_count = 1;
+
+    TextString id = { 0 };
+    if (uuid)
+    {
+        id.value = uuid;
+        id.size = uuid_size;
+    }
+
+    RekeyRequestPayload rkrp = {0};
+    rkrp.offset = offset;  // -1 = KMIP_UNSET
+    if (uuid)
+    {
+        rkrp.unique_identifier = &id;
+    }
+    rkrp.template_attribute = template_attribute;
+
+    RequestBatchItem rbi = {0};
+    kmip_init_request_batch_item(&rbi);
+    rbi.operation = KMIP_OP_REKEY;
+    rbi.request_payload = &rkrp;
+
+    RequestMessage rm = {0};
+    rm.request_header = &rh;
+    rm.batch_items = &rbi;
+    rm.batch_count = 1;
+
+    /* Add the context credential to the request message if it exists. */
+    /* TODO (ph) Update this to add multiple credentials. */
+    Authentication auth = {0};
+    if(ctx->credential_list != NULL)
+    {
+        LinkedListItem *item = ctx->credential_list->head;
+        if(item != NULL)
+        {
+            auth.credential = (Credential *)item->data;
+            rh.authentication = &auth;
+        }
+    }
+
+    /* Encode the request message. Dynamically resize the encoding buffer */
+    /* if it's not big enough. Once encoding succeeds, send the request   */
+    /* message.                                                           */
+    int encode_result = kmip_encode_request_message(ctx, &rm);
+    while(encode_result == KMIP_ERROR_BUFFER_FULL)
+    {
+        kmip_reset(ctx);
+        ctx->free_func(ctx->state, encoding);
+
+        buffer_blocks += 1;
+        buffer_total_size = buffer_blocks * buffer_block_size;
+
+        encoding = ctx->calloc_func(ctx->state, buffer_blocks, buffer_block_size);
+        if(encoding == NULL)
+        {
+            kmip_set_buffer(ctx, NULL, 0);
+            return(KMIP_MEMORY_ALLOC_FAILED);
+        }
+
+        kmip_set_buffer(ctx,encoding,buffer_total_size);
+        encode_result = kmip_encode_request_message(ctx, &rm);
+    }
+
+    if(encode_result != KMIP_OK)
+    {
+        kmip_free_buffer(ctx, encoding, buffer_total_size);
+        encoding = NULL;
+        kmip_set_buffer(ctx, NULL, 0);
+        return(encode_result);
+    }
+
+    int sent = BIO_write(bio, ctx->buffer, ctx->index - ctx->buffer);
+    if(sent != ctx->index - ctx->buffer)
+    {
+        kmip_free_buffer(ctx, encoding, buffer_total_size);
+        encoding = NULL;
+        kmip_set_buffer(ctx, NULL, 0);
+        return(KMIP_IO_FAILURE);
+    }
+
+    kmip_free_buffer(ctx, encoding, buffer_total_size);
+    encoding = NULL;
+    kmip_set_buffer(ctx, NULL, 0);
+
+    /* Read the response message. Dynamically resize the encoding buffer  */
+    /* to align with the message size advertised by the message encoding. */
+    /* Reject the message if the message size is too large.               */
+    buffer_blocks = 1;
+    buffer_block_size = 8;
+    buffer_total_size = buffer_blocks * buffer_block_size;
+
+    encoding = ctx->calloc_func(ctx->state, buffer_blocks, buffer_block_size);
+    if(encoding == NULL)
+    {
+        return(KMIP_MEMORY_ALLOC_FAILED);
+    }
+
+    int recv = BIO_read(bio, encoding, buffer_total_size);
+    if((size_t)recv != buffer_total_size)
+    {
+        kmip_free_buffer(ctx, encoding, buffer_total_size);
+        encoding = NULL;
+        kmip_set_buffer(ctx, NULL, 0);
+        return(KMIP_IO_FAILURE);
+    }
+
+    kmip_set_buffer(ctx, encoding, buffer_total_size);
+    ctx->index += 4;
+    int length = 0;
+
+    kmip_decode_int32_be(ctx, &length);
+    kmip_rewind(ctx);
+    if(length > ctx->max_message_size)
+    {
+        kmip_free_buffer(ctx, encoding, buffer_total_size);
+        encoding = NULL;
+        kmip_set_buffer(ctx, NULL, 0);
+        return(KMIP_EXCEED_MAX_MESSAGE_SIZE);
+    }
+
+    kmip_set_buffer(ctx, NULL, 0);
+    uint8 *extended = ctx->realloc_func(ctx->state, encoding, buffer_total_size + length);
+    if(encoding != extended)
+    {
+        encoding = extended;
+    }
+    ctx->memset_func(encoding + buffer_total_size, 0, length);
+
+    buffer_block_size += length;
+    buffer_total_size = buffer_blocks * buffer_block_size;
+
+    recv = BIO_read(bio, encoding + 8, length);
+    if(recv != length)
+    {
+        kmip_free_buffer(ctx, encoding, buffer_total_size);
+        encoding = NULL;
+        kmip_set_buffer(ctx, NULL, 0);
+        return(KMIP_IO_FAILURE);
+    }
+
+    kmip_set_buffer(ctx, encoding, buffer_block_size);
+
+    /* Decode the response message and retrieve the operation result status. */
+    ResponseMessage resp_m = {0};
+    int decode_result = kmip_decode_response_message(ctx, &resp_m);
+
+    kmip_set_buffer(ctx, NULL, 0);
+
+    if(decode_result != KMIP_OK)
+    {
+        kmip_free_response_message(ctx, &resp_m);
+        kmip_free_buffer(ctx, encoding, buffer_total_size);
+        encoding = NULL;
+        return(decode_result);
+    }
+
+    if(resp_m.batch_count != 1 || resp_m.batch_items == NULL)
+    {
+        kmip_free_response_message(ctx, &resp_m);
+        kmip_free_buffer(ctx, encoding, buffer_total_size);
+        encoding = NULL;
+        return(KMIP_MALFORMED_RESPONSE);
+    }
+
+    ResponseBatchItem resp_item = resp_m.batch_items[0];
+    enum result_status result = resp_item.result_status;
+
+    kmip_set_last_result(&resp_item);
+
+    if(result != KMIP_STATUS_SUCCESS)
+    {
+        kmip_free_response_message(ctx, &resp_m);
+        kmip_free_buffer(ctx, encoding, buffer_total_size);
+        encoding = NULL;
+        kmip_set_buffer(ctx, NULL, 0);
+        return(result);
+    }
+
+    RekeyResponsePayload *pld = (RekeyResponsePayload *)resp_item.response_payload;
+
+    if (pld)
+    {
+        TextString *unique_identifier = pld->unique_identifier;
+
+        /* KMIP text strings are not null-terminated by default. Add an extra */
+        /* character to the end of the UUID copy to make space for the null   */
+        /* terminator.                                                        */
+        char *result_id = ctx->calloc_func(ctx->state,1,unique_identifier->size + 1);
+        *rekey_uuid_size = unique_identifier->size;
+        for(int i = 0; i < *rekey_uuid_size; i++)
+            result_id[i] = unique_identifier->value[i];
+        *rekey_uuid = result_id;
+    }
+
+    /* Clean up the response message, the encoding buffer, and the KMIP */
+    /* context. */
+    kmip_free_response_message(ctx, &resp_m);
+    kmip_free_buffer(ctx, encoding, buffer_total_size);
+    encoding = NULL;
+    kmip_set_buffer(ctx, NULL, 0);
+
+    return(result);
 }

@@ -2990,6 +2990,121 @@ test_decode_attribute_name(TestTracker *tracker)
     return(result);
 }
 
+
+int
+test_encode_attribute_link(TestTracker *tracker)
+{
+    TRACK_TEST(tracker);
+
+ /*  Tag: Attribute (0x420008), Type: Structure (0x01), Data:
+          Tag: Attribute Name (0x42000A), Type: Text String (0x07), Data: Link
+          Tag: Attribute Value (0x42000B), Type: Structure (0x01), Data:
+            Tag: Link Type (0x42004B), Type: Enumeration (0x05), Data: 0x00000102 (Public Key Link)
+            Tag: Linked Object Identifier (0x42004C), Type: Text String (0x07), Data: 3ddc1ae4-e212-46c7-a835-449fb94d12ff
+ */
+
+    uint8 expected[96] = {
+        0x42, 0x00, 0x08, 0x01, 0x00, 0x00, 0x00, 0x58,
+        0x42, 0x00, 0x0A, 0x07, 0x00, 0x00, 0x00, 0x04,
+        0x4C, 0x69, 0x6E, 0x6B, 0x00, 0x00, 0x00, 0x00,
+        0x42, 0x00, 0x0B, 0x01, 0x00, 0x00, 0x00, 0x40,
+        0x42, 0x00, 0x4B, 0x05, 0x00, 0x00, 0x00, 0x04,
+        0x00, 0x00, 0x01, 0x02, 0x00, 0x00, 0x00, 0x00,
+        0x42, 0x00, 0x4C, 0x07, 0x00, 0x00, 0x00, 0x24,
+        0x33, 0x64, 0x64, 0x63, 0x31, 0x61, 0x65, 0x34,
+        0x2D, 0x65, 0x32, 0x31, 0x32, 0x2D, 0x34, 0x36,
+        0x63, 0x37, 0x2D, 0x61, 0x38, 0x33, 0x35, 0x2D,
+        0x34, 0x34, 0x39, 0x66, 0x62, 0x39, 0x34, 0x64,
+        0x31, 0x32, 0x66, 0x66, 0x00, 0x00, 0x00, 0x00,
+    };
+
+    uint8 observed[96] = {0};
+    struct kmip ctx = {0};
+    kmip_init(&ctx, observed, ARRAY_LENGTH(observed), KMIP_1_0);
+
+    struct text_string value = {0};
+    value.value = "3ddc1ae4-e212-46c7-a835-449fb94d12ff";
+    value.size = 36;
+
+    Link lnk = {0};
+    lnk.value = &value;
+    lnk.type = KMIP_LINKTYPE_PUBLIC_KEY;
+
+    struct attribute attr = {0};
+    kmip_init_attribute(&attr);
+
+    attr.type = KMIP_ATTR_LINK;
+    attr.value = &lnk;
+
+    int result = kmip_encode_attribute(&ctx, &attr);
+    result = report_encoding_test_result(
+        tracker,
+        &ctx,
+        expected,
+        observed,
+        result,
+        __func__);
+    kmip_destroy(&ctx);
+    return(result);
+}
+
+int
+test_decode_attribute_link(TestTracker *tracker)
+{
+    TRACK_TEST(tracker);
+
+    uint8 encoding[96] = {
+        0x42, 0x00, 0x08, 0x01, 0x00, 0x00, 0x00, 0x58,
+        0x42, 0x00, 0x0A, 0x07, 0x00, 0x00, 0x00, 0x04,
+        0x4C, 0x69, 0x6E, 0x6B, 0x00, 0x00, 0x00, 0x00,
+        0x42, 0x00, 0x0B, 0x01, 0x00, 0x00, 0x00, 0x40,
+        0x42, 0x00, 0x4B, 0x05, 0x00, 0x00, 0x00, 0x04,
+        0x00, 0x00, 0x01, 0x02, 0x00, 0x00, 0x00, 0x00,
+        0x42, 0x00, 0x4C, 0x07, 0x00, 0x00, 0x00, 0x24,
+        0x33, 0x64, 0x64, 0x63, 0x31, 0x61, 0x65, 0x34,
+        0x2D, 0x65, 0x32, 0x31, 0x32, 0x2D, 0x34, 0x36,
+        0x63, 0x37, 0x2D, 0x61, 0x38, 0x33, 0x35, 0x2D,
+        0x34, 0x34, 0x39, 0x66, 0x62, 0x39, 0x34, 0x64,
+        0x31, 0x32, 0x66, 0x66, 0x00, 0x00, 0x00, 0x00,
+    };
+
+    struct kmip ctx = {0};
+    kmip_init(&ctx, encoding, ARRAY_LENGTH(encoding), KMIP_1_0);
+
+    struct text_string value = {0};
+    value.value = "3ddc1ae4-e212-46c7-a835-449fb94d12ff";
+    value.size = 36;
+
+    Link lnk = {0};
+    lnk.value = &value;
+    lnk.type = KMIP_LINKTYPE_PUBLIC_KEY;
+
+    struct attribute expected = {0};
+    kmip_init_attribute(&expected);
+    expected.type = KMIP_ATTR_LINK;
+    expected.value = &lnk;
+
+    struct attribute observed = {0};
+    kmip_init_attribute(&observed);
+    int result = kmip_decode_attribute(&ctx, &observed);
+
+//  printf("decode result=%d\n, result");
+//  printf("observed\n");
+//  kmip_print_attribute(stderr, 1, &observed);
+//  printf("expected\n");
+//  kmip_print_attribute(stderr, 1, &expected);
+
+    result = report_decoding_test_result(
+        tracker,
+        &ctx,
+        kmip_compare_attribute(&expected, &observed),
+        result,
+        __func__);
+    kmip_free_attribute(&ctx, &observed);
+    kmip_destroy(&ctx);
+    return(result);
+}
+
 int
 test_encode_attribute_object_type(TestTracker *tracker)
 {
@@ -13318,6 +13433,88 @@ test_encode_locate_request_payload_group(TestTracker *tracker)
 }
 
 int
+test_encode_rekey_request_payload(TestTracker *tracker)
+{
+    TRACK_TEST(tracker);
+
+    // Tag: Request Payload (0x420079), Type: Structure (0x01), Data:
+    // Tag: Unique Identifier (0x420094), Type: Text String (0x07), Data: 964d3dd2-5f06-4529-8bb8-ae630b6ca2e0
+ 
+    uint8 expected[56] = {
+
+        0x42, 0x00, 0x79, 0x01, 0x00, 0x00, 0x00, 0x30,
+        0x42, 0x00, 0x94, 0x07, 0x00, 0x00, 0x00, 0x24,
+        0x39, 0x36, 0x34, 0x64, 0x33, 0x64, 0x64, 0x32,
+        0x2D, 0x35, 0x66, 0x30, 0x36, 0x2D, 0x34, 0x35,
+        0x32, 0x39, 0x2D, 0x38, 0x62, 0x62, 0x38, 0x2D,
+        0x61, 0x65, 0x36, 0x33, 0x30, 0x62, 0x36, 0x63,
+        0x61, 0x32, 0x65, 0x30, 0x00, 0x00, 0x00, 0x00
+    };
+
+    uint8 observed[56] = {0};
+    struct kmip ctx = {0};
+    kmip_init(&ctx, observed, ARRAY_LENGTH(observed), KMIP_1_0);
+
+    struct text_string uuid = {0};
+    uuid.value = "964d3dd2-5f06-4529-8bb8-ae630b6ca2e0";
+    uuid.size = 36;
+
+    struct rekey_request_payload rrp = {0};
+    rrp.unique_identifier = &uuid;
+    rrp.offset = KMIP_UNSET;
+
+    int result = kmip_encode_rekey_request_payload(&ctx, &rrp);
+    result = report_encoding_test_result(
+        tracker,
+        &ctx,
+        expected,
+        observed,
+        result,
+        __func__);
+    kmip_destroy(&ctx);
+    return(result);
+}
+
+int
+test_decode_rekey_request_payload(TestTracker *tracker)
+{
+    TRACK_TEST(tracker);
+
+    uint8 encoding[56] = {
+        0x42, 0x00, 0x79, 0x01, 0x00, 0x00, 0x00, 0x30,
+        0x42, 0x00, 0x94, 0x07, 0x00, 0x00, 0x00, 0x24,
+        0x34, 0x39, 0x61, 0x31, 0x63, 0x61, 0x38, 0x38,
+        0x2D, 0x36, 0x62, 0x65, 0x61, 0x2D, 0x34, 0x66,
+        0x62, 0x32, 0x2D, 0x62, 0x34, 0x35, 0x30, 0x2D,
+        0x37, 0x65, 0x35, 0x38, 0x38, 0x30, 0x32, 0x63,
+        0x33, 0x30, 0x33, 0x38, 0x00, 0x00, 0x00, 0x00
+    };
+
+    struct kmip ctx = {0};
+    kmip_init(&ctx, encoding, ARRAY_LENGTH(encoding), KMIP_1_0);
+
+    struct text_string uuid = {0};
+    uuid.value = "49a1ca88-6bea-4fb2-b450-7e58802c3038";
+    uuid.size = 36;
+
+    struct rekey_request_payload expected = {0};
+    expected.unique_identifier = &uuid;
+
+    struct rekey_request_payload observed = {0};
+
+    int result = kmip_decode_rekey_request_payload(&ctx, &observed);
+    result = report_decoding_test_result(
+        tracker,
+        &ctx,
+        kmip_compare_rekey_request_payload(&expected, &observed),
+        result,
+        __func__);
+    kmip_free_rekey_request_payload(&ctx, &observed);
+    kmip_destroy(&ctx);
+    return(result);
+}
+
+int
 test_decode_locate_request_payload_group(TestTracker *tracker)
 {
     TRACK_TEST(tracker);
@@ -14359,6 +14556,7 @@ run_tests(void)
     test_decode_attribute_application_specific_information_invalid_encoding(&tracker);
     test_decode_attribute_unique_identifier(&tracker);
     test_decode_attribute_name(&tracker);
+    test_decode_attribute_link(&tracker);
     test_decode_attribute_object_type(&tracker);
     test_decode_attribute_cryptographic_algorithm(&tracker);
     test_decode_attribute_cryptographic_length(&tracker);
@@ -14418,6 +14616,7 @@ run_tests(void)
     test_decode_locate_response_payload(&tracker);
     test_decode_locate_request_payload(&tracker);
     test_decode_locate_request_payload_group(&tracker);
+    test_decode_rekey_request_payload(&tracker);
 
     printf("\n");
     test_encode_integer(&tracker);
@@ -14433,6 +14632,7 @@ run_tests(void)
     test_encode_attribute_application_specific_information_invalid_field(&tracker);
     test_encode_attribute_unique_identifier(&tracker);
     test_encode_attribute_name(&tracker);
+    test_encode_attribute_link(&tracker);
     test_encode_attribute_object_type(&tracker);
     test_encode_attribute_cryptographic_algorithm(&tracker);
     test_encode_attribute_cryptographic_length(&tracker);
@@ -14492,6 +14692,7 @@ run_tests(void)
     test_encode_locate_request_payload_2(&tracker);
     test_encode_locate_response_payload(&tracker);
     test_encode_locate_request_payload_group(&tracker);
+    test_encode_rekey_request_payload(&tracker);
 
     printf("\nKMIP 1.1 Feature Tests\n");
     printf("----------------------\n");

@@ -466,6 +466,26 @@ enum object_type
     KMIP_OBJTYPE_CERTIFICATE_REQUEST = 0x0A
 };
 
+enum link_type
+{
+    KMIP_LINKTYPE_CERTIFICATE            = 0x00000101,
+    KMIP_LINKTYPE_PUBLIC_KEY             = 0x00000102,
+    KMIP_LINKTYPE_PRIVATE_KEY            = 0x00000103,
+    KMIP_LINKTYPE_DERIVATION_BASE_OBJECT = 0x00000104,
+    KMIP_LINKTYPE_DERIVED_KEY            = 0x00000105,
+    KMIP_LINKTYPE_REPLACEMENT_OBJECT     = 0x00000106,
+    KMIP_LINKTYPE_REPLACED_OBJECT        = 0x00000107,
+    KMIP_LINKTYPE_PARENT                 = 0x00000108,
+    KMIP_LINKTYPE_CHILD                  = 0x00000109,
+    KMIP_LINKTYPE_PREVIOUS               = 0x0000010A,
+    KMIP_LINKTYPE_NEXT                   = 0x0000010B,
+    KMIP_LINKTYPE_PKCS12_CERTIFICATE     = 0x0000010C,
+    KMIP_LINKTYPE_PKCS12_PASSWORD        = 0x0000010D,
+
+    /* KMIP 2.0 */
+    KMIP_LINKTYPE_WRAPPING_KEY           =  0x0000010E
+
+};
 enum operation
 {
     // # KMIP 1.0
@@ -737,6 +757,9 @@ enum tag
     KMIP_TAG_KEY_VALUE                        = 0x420045,
     KMIP_TAG_KEY_WRAPPING_DATA                = 0x420046,
     KMIP_TAG_KEY_WRAPPING_SPECIFICATION       = 0x420047,
+    KMIP_TAG_LINK                             = 0x42004A,
+    KMIP_TAG_LINK_TYPE                        = 0x42004B,
+    KMIP_TAG_LINKED_OBJECT_TYPE               = 0x42004C,
     KMIP_TAG_MAC_SIGNATURE                    = 0x42004D,
     KMIP_TAG_MAC_SIGNATURE_KEY_INFORMATION    = 0x42004E,
     KMIP_TAG_MAXIMUM_ITEMS                    = 0x42004F,
@@ -746,6 +769,7 @@ enum tag
     KMIP_TAG_NAME_VALUE                       = 0x420055,
     KMIP_TAG_OBJECT_GROUP                     = 0x420056,
     KMIP_TAG_OBJECT_TYPE                      = 0x420057,
+    KMIP_TAG_OFFSET                           = 0x420058,
     KMIP_TAG_OPERATION                        = 0x42005C,
     KMIP_TAG_OPERATION_POLICY_NAME            = 0x42005D,
     KMIP_TAG_PADDING_METHOD                   = 0x42005F,
@@ -956,6 +980,12 @@ typedef struct name
     struct text_string *value;
     enum name_type type;
 } Name;
+
+typedef struct link
+{
+    enum link_type type;
+    struct text_string *value;
+} Link;
 
 typedef struct template_attribute
 {
@@ -1402,6 +1432,26 @@ typedef struct locate_response_payload
     UniqueIdentifiers* unique_ids;
 } LocateResponsePayload;
 
+typedef struct rekey_request_payload
+{
+    TextString *unique_identifier;
+    int32      offset;
+
+    /* KMIP 1.0 */
+    TemplateAttribute *template_attribute;
+    /* KMIP 2.0 */
+    Attributes *attributes;
+    ProtectionStorageMasks *protection_storage_masks;
+
+} RekeyRequestPayload;
+
+typedef struct rekey_response_payload
+{
+    TextString *unique_identifier;
+    /* KMIP 1.0 */
+    TemplateAttribute *template_attribute;
+} RekeyResponsePayload;
+
 
 #define MAX_LOCATE_IDS   32
 #define MAX_LOCATE_LEN   128
@@ -1645,6 +1695,7 @@ void kmip_free_buffer(KMIP *, void *, size_t);
 void kmip_free_text_string(KMIP *, TextString *);
 void kmip_free_byte_string(KMIP *, ByteString *);
 void kmip_free_name(KMIP *, Name *);
+void kmip_free_link(KMIP *, Link *);
 void kmip_free_attribute(KMIP *, Attribute *);
 void kmip_free_attributes(KMIP *, Attributes *);
 void kmip_free_template_attribute(KMIP *, TemplateAttribute *);
@@ -1664,6 +1715,8 @@ void kmip_free_private_key(KMIP *, PrivateKey *);
 void kmip_free_key_wrapping_specification(KMIP *, KeyWrappingSpecification *);
 void kmip_free_create_request_payload(KMIP *, CreateRequestPayload *);
 void kmip_free_create_response_payload(KMIP *, CreateResponsePayload *);
+void kmip_free_rekey_request_payload(KMIP *, RekeyRequestPayload *);
+void kmip_free_rekey_response_payload(KMIP *, RekeyResponsePayload *);
 void kmip_free_get_request_payload(KMIP *, GetRequestPayload *);
 void kmip_free_get_response_payload(KMIP *, GetResponsePayload *);
 void kmip_free_activate_request_payload(KMIP *, ActivateRequestPayload *);
@@ -1705,6 +1758,7 @@ int64 * kmip_deep_copy_int64(KMIP *, const int64 *);
 TextString * kmip_deep_copy_text_string(KMIP *, const TextString *);
 ByteString * kmip_deep_copy_byte_string(KMIP *, const ByteString *);
 Name * kmip_deep_copy_name(KMIP *, const Name *);
+Link * kmip_deep_copy_link(KMIP *, const Link *);
 CryptographicParameters * kmip_deep_copy_cryptographic_parameters(KMIP *, const CryptographicParameters *);
 ApplicationSpecificInformation * kmip_deep_copy_application_specific_information(KMIP *, const ApplicationSpecificInformation *);
 Attribute * kmip_deep_copy_attribute(KMIP *, const Attribute *);
@@ -1722,6 +1776,7 @@ Comparison Functions
 int kmip_compare_text_string(const TextString *, const TextString *);
 int kmip_compare_byte_string(const ByteString *, const ByteString *);
 int kmip_compare_name(const Name *, const Name *);
+int kmip_compare_link(const Link *, const Link *);
 int kmip_compare_attribute(const Attribute *, const Attribute *);
 int kmip_compare_attributes(const Attributes *, const Attributes *);
 int kmip_compare_template_attribute(const TemplateAttribute *, const TemplateAttribute *);
@@ -1742,6 +1797,8 @@ int kmip_compare_private_key(const PrivateKey *, const PrivateKey *);
 int kmip_compare_key_wrapping_specification(const KeyWrappingSpecification *, const KeyWrappingSpecification *);
 int kmip_compare_create_request_payload(const CreateRequestPayload *, const CreateRequestPayload *);
 int kmip_compare_create_response_payload(const CreateResponsePayload *, const CreateResponsePayload *);
+int kmip_compare_rekey_request_payload(const RekeyRequestPayload *, const RekeyRequestPayload *);
+int kmip_compare_rekey_response_payload(const RekeyResponsePayload *, const RekeyResponsePayload *);
 int kmip_compare_get_request_payload(const GetRequestPayload *, const GetRequestPayload *);
 int kmip_compare_get_response_payload(const GetResponsePayload *, const GetResponsePayload *);
 int kmip_compare_activate_request_payload(const ActivateRequestPayload *, const ActivateRequestPayload *);
@@ -1792,6 +1849,7 @@ int kmip_encode_date_time(KMIP *, enum tag, int64);
 int kmip_encode_interval(KMIP *, enum tag, uint32);
 int kmip_encode_length(KMIP *, intptr);
 int kmip_encode_name(KMIP *, const Name *);
+int kmip_encode_link(KMIP *, const Link *);
 int kmip_encode_attribute_name(KMIP *, enum attribute_type);
 int kmip_encode_attribute_v1(KMIP *, const Attribute *);
 int kmip_encode_attribute_v2(KMIP *, const Attribute *);
@@ -1844,6 +1902,7 @@ int kmip_encode_query_response_payload(KMIP *, const QueryResponsePayload *);
 int kmip_encode_locate_request_payload(KMIP *, const LocateRequestPayload *);
 int kmip_encode_locate_response_payload(KMIP *, const LocateResponsePayload *);
 int kmip_encode_unique_identifiers(KMIP *, const UniqueIdentifiers*);
+int kmip_encode_rekey_request_payload(KMIP *, const RekeyRequestPayload *);
 
 /*
 Decoding Functions
@@ -1862,6 +1921,7 @@ int kmip_decode_byte_string(KMIP *, enum tag, ByteString *);
 int kmip_decode_date_time(KMIP *, enum tag, int64 *);
 int kmip_decode_interval(KMIP *, enum tag, uint32 *);
 int kmip_decode_name(KMIP *, Name *);
+int kmip_decode_link(KMIP *, Link *);
 int kmip_decode_attribute_name(KMIP *, enum attribute_type *);
 int kmip_decode_attribute_v1(KMIP *, Attribute *);
 int kmip_decode_attribute_v2(KMIP *, Attribute *);
@@ -1916,6 +1976,7 @@ int kmip_decode_server_information(KMIP *ctx, ServerInformation *);
 int kmip_decode_locate_request_payload(KMIP *, LocateRequestPayload *);
 int kmip_decode_locate_response_payload(KMIP *, LocateResponsePayload *);
 int kmip_decode_unique_identifiers(KMIP* ctx, UniqueIdentifiers* value);
+int kmip_decode_rekey_request_payload(KMIP *, RekeyRequestPayload *);
 
 
 #endif  /* KMIP_H */

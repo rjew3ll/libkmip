@@ -51,4 +51,6 @@ int kmip_bio_send_request_encoding(KMIP *, BIO *, char *, int, char **, int *);
 
 int kmip_bio_locate_with_context(KMIP *ctx, BIO *bio, Attribute* attribs, size_t attrib_count, LocateResponse* locate_result);
 
+int kmip_bio_rekey_symmetric_key_with_context(KMIP *, BIO *,char *uuid, int uuid_size, int offset,TemplateAttribute *,char **rekey_uuid, int *rekey_uuid_size);
+
 #endif  /* KMIP_BIO_H */

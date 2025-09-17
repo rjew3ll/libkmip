@@ -1243,6 +1243,68 @@ kmip_print_name_type_enum(FILE *f, enum name_type value)
 }
 
 void
+kmip_print_link_type_enum(FILE *f, enum link_type value)
+{
+    if(value == 0)
+    {
+        fprintf(f, "-");
+        return;
+    }
+
+    switch(value)
+    {
+        case KMIP_LINKTYPE_CERTIFICATE:
+            fprintf(f, "Certificate Link");
+            break;
+        case KMIP_LINKTYPE_PUBLIC_KEY:
+            fprintf(f, "Public key Link");
+            break;
+        case KMIP_LINKTYPE_PRIVATE_KEY:
+            fprintf(f, "Private key Link");
+            break;
+        case KMIP_LINKTYPE_DERIVATION_BASE_OBJECT:
+            fprintf(f, "Derivation base Link");
+            break;
+        case KMIP_LINKTYPE_DERIVED_KEY:
+            fprintf(f, "Derived key Link");
+            break;
+        case KMIP_LINKTYPE_REPLACEMENT_OBJECT:
+            fprintf(f, "Replacement Object Link");
+            break;
+        case KMIP_LINKTYPE_REPLACED_OBJECT:
+            fprintf(f, "Replaced Object Link");
+            break;
+        case KMIP_LINKTYPE_PARENT:
+            fprintf(f, "Parent Link");
+            break;
+        case KMIP_LINKTYPE_CHILD:
+            fprintf(f, "Child Link");
+            break;
+        case KMIP_LINKTYPE_PREVIOUS:
+            fprintf(f, "Previous Link");
+            break;
+        case KMIP_LINKTYPE_NEXT:
+            fprintf(f, "Next Link");
+            break;
+        case KMIP_LINKTYPE_PKCS12_CERTIFICATE:
+            fprintf(f, "PKCS12 certificate Link");
+            break;
+        case KMIP_LINKTYPE_PKCS12_PASSWORD:
+            fprintf(f, "PKCS12 key Link");
+            break;
+
+        /* KMIP 2.0 */
+        case KMIP_LINKTYPE_WRAPPING_KEY:
+            fprintf(f, "Wrapping key Link");
+            break;
+
+        default:
+        fprintf(f, "Unknown");
+        break;
+    };
+}
+
+void
 kmip_print_attribute_type_enum(FILE *f, enum attribute_type value)
 {
     if((int)value == KMIP_UNSET)
@@ -1267,6 +1329,10 @@ kmip_print_attribute_type_enum(FILE *f, enum attribute_type value)
         fprintf(f, "Name");
         break;
         
+        case KMIP_ATTR_LINK:
+        fprintf(f, "Link");
+        break;
+
         case KMIP_ATTR_OBJECT_TYPE:
         fprintf(f, "Object Type");
         break;
@@ -2318,6 +2384,21 @@ kmip_print_name(FILE *f, int indent, Name *value)
 }
 
 void
+kmip_print_link(FILE *f, int indent, Link *value)
+{
+    fprintf(f, "%*sLink @ %p\n", indent, "", (void *)value);
+
+    if(value != NULL)
+    {
+        kmip_print_text_string(f, indent + 2, "Link Value", value->value);
+
+        fprintf(f, "%*sLink Type: ", indent + 2, "");
+        kmip_print_link_type_enum(f, value->type);
+        fprintf(f, "\n");
+    }
+}
+
+void
 kmip_print_nonce(FILE *f, int indent, Nonce *value)
 {
     fprintf(f, "%*sNonce @ %p\n", indent, "", (void *)value);
@@ -2499,6 +2580,11 @@ kmip_print_attribute_value(FILE *f, int indent, enum attribute_type type, void *
         kmip_print_name(f, indent + 2, value);
         break;
         
+        case KMIP_ATTR_LINK:
+        fprintf(f, "\n");
+        kmip_print_link(f, indent + 2, value);
+        break;
+
         case KMIP_ATTR_OBJECT_TYPE:
         kmip_print_object_type_enum(f, *(enum object_type *)value);
         fprintf(f, "\n");
@@ -2816,6 +2902,37 @@ kmip_print_get_response_payload(FILE *f, int indent, GetResponsePayload *value)
 }
 
 void
+kmip_print_rekey_request_payload(FILE *f, int indent, RekeyRequestPayload *value)
+{
+    fprintf(f, "%*sRekey Request Payload @ %p\n", indent, "", (void *)value);
+
+    if(value != NULL)
+    {
+        kmip_print_text_string(f, indent + 2, "Unique Identifier", value->unique_identifier);
+
+        fprintf(f, "%*sOffset: ", indent + 2, "");
+        kmip_print_integer(f, value->offset);
+        fprintf(f, "\n");
+
+        kmip_print_template_attribute(f, indent + 2, value->template_attribute);
+        kmip_print_attributes(f, indent + 2, value->attributes);
+        kmip_print_protection_storage_masks(f, indent + 2, value->protection_storage_masks);
+    }
+}
+
+void
+kmip_print_rekey_response_payload(FILE *f, int indent, RekeyResponsePayload *value)
+{
+    fprintf(f, "%*sRekey Response Payload @ %p\n", indent, "", (void *)value);
+
+    if(value != NULL)
+    {
+        kmip_print_text_string(f, indent + 2, "Unique Identifier", value->unique_identifier);
+        kmip_print_template_attribute(f, indent + 2, value->template_attribute);
+    }
+}
+
+void
 kmip_print_activate_request_payload(FILE *f, int indent, ActivateRequestPayload *value)
 {
     fprintf(f, "%*sActivate Request Payload @ %p\n", indent, "", (void *)value);
@@ -2868,6 +2985,10 @@ kmip_print_request_payload(FILE *f, int indent, enum operation type, void *value
         kmip_print_create_request_payload(f, indent, value);
         break;
         
+        case KMIP_OP_REKEY:
+        kmip_print_rekey_request_payload(f, indent, value);
+        break;
+
         case KMIP_OP_GET:
         kmip_print_get_request_payload(f, indent, (GetRequestPayload *)value);
         break;
@@ -2907,10 +3028,14 @@ kmip_print_response_payload(FILE *f, int indent, enum operation type, void *valu
         kmip_print_create_response_payload(f, indent, value);
         break;
         
+        case KMIP_OP_REKEY:
+        kmip_print_rekey_response_payload(f, indent, value);
+        break;
+        
         case KMIP_OP_GET:
         kmip_print_get_response_payload(f, indent, (GetResponsePayload *)value);
         break;
-        
+
         case KMIP_OP_ACTIVATE:
         kmip_print_activate_response_payload(f, indent, value);
         break;
