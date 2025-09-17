@@ -28,16 +28,26 @@ print_help(const char *app)
     printf("-k path : path to client key file\n");
     printf("-p port : the port number of the KMIP server\n");
     printf("-r path : path to CA certificate file\n");
-    printf("-n name : name of new key\n");
-    printf("-g group : name of object group\n");
+    printf("-i id   : the ID of the item to get\n");
+    printf("-n %d   : get uuid\n", KMIP_ATTR_UNIQUE_IDENTIFIER);
+    printf("-n %d   : get name\n", KMIP_ATTR_NAME);
+    printf("-n %d   : get link\n", KMIP_ATTR_LINK);
+    printf("-n %d   : get operationpolicy name\n", KMIP_ATTR_OPERATION_POLICY_NAME);
+    printf("-n %d   : get state\n", KMIP_ATTR_STATE);
+    printf("-n %d   : get object group\n", KMIP_ATTR_OBJECT_GROUP);
+    printf("-n %d   : get contact information\n", KMIP_ATTR_CONTACT_INFORMATION);
+    printf("-n %d   : get activation date\n", KMIP_ATTR_ACTIVATION_DATE);
+    printf("-n %d   : get deactivation date\n", KMIP_ATTR_DEACTIVATION_DATE);
+    printf("-n %d   : get process start date\n", KMIP_ATTR_PROCESS_START_DATE);
+    printf("-n %d   : get process stop date\n", KMIP_ATTR_PROTECT_STOP_DATE);
 }
 
 int
 parse_arguments(int argc, char **argv,
                 char **server_address, char **server_port,
                 char **client_certificate, char **client_key, char **ca_certificate,
-                char **key_name,
-                char **group,
+                char **uuid,
+                enum attribute_type* attribs, size_t* attrib_count,
                 int *print_usage)
 {
     if(argc <= 1)
@@ -72,10 +82,15 @@ parse_arguments(int argc, char **argv,
         {
             *ca_certificate = argv[++i];
         }
+        else if(strncmp(argv[i], "-i", 2) == 0)
+        {
+            *uuid = argv[++i];
+        }
         else if(strncmp(argv[i], "-n", 2) == 0)
-            *key_name = argv[++i];
-        else if(strncmp(argv[i], "-g", 2) == 0)
-            *group = argv[++i];
+        {
+            attribs[*attrib_count] = atoi(argv[++i]);
+            *attrib_count = *attrib_count + 1;
+        }
         else
         {
             printf("Invalid option: '%s'\n", argv[i]);
@@ -113,14 +128,18 @@ demo_free(void *state, void *ptr)
 }
 
 
-int use_low_level_api(KMIP *ctx, BIO *bio, Attribute* attribs, size_t attrib_count, LocateResponse* locate_result)
+int use_low_level_api(KMIP *ctx, BIO *bio, char *uuid, enum attribute_type* attribs, size_t attrib_count, GetAttributesResponse* getattributes_result)
 {
-    if (ctx == NULL || bio == NULL || attribs == NULL || attrib_count == 0 || locate_result == NULL)
+    if (ctx == NULL || bio == NULL || getattributes_result == NULL)
+    {
+        return(KMIP_ARG_INVALID);
+    }
+    if ( attribs == NULL && attrib_count != 0)
     {
         return(KMIP_ARG_INVALID);
     }
 
-    printf("bio locate start \n");
+    printf("bio get_attribute start \n");
 
     size_t buffer_blocks = 1;
     size_t buffer_block_size = 1024;
@@ -146,28 +165,38 @@ int use_low_level_api(KMIP *ctx, BIO *bio, Attribute* attribs, size_t attrib_cou
     rh.time_stamp = time(NULL);
     rh.batch_count = 1;
 
-    // copy input array to list
-    Attributes attributes = {0};
-    LinkedList *attribute_list = ctx->calloc_func(ctx->state, 1, sizeof(LinkedList));
+    TextString id = {0};
+    id.value = uuid;
+    id.size = strlen(uuid);;
+
+    // convert input array of attr types to list of attribute names
+    AttributeNames names = {0};
+    LinkedList *name_list = ctx->calloc_func(ctx->state, 1, sizeof(LinkedList));
     for(size_t i = 0; i < attrib_count; i++)
     {
         LinkedListItem *item = ctx->calloc_func(ctx->state, 1, sizeof(LinkedListItem));
-        item->data = kmip_deep_copy_attribute(ctx, &attribs[i]);
-        kmip_linked_list_enqueue(attribute_list, item);
-    }
-    attributes.attribute_list = attribute_list;
 
-    LocateRequestPayload lrp = {0};
-    lrp.maximum_items = 12;
-    lrp.offset_items = 0;
-    lrp.storage_status_mask = 0;
-    lrp.group_member_option = 0;
-    lrp.attributes = &attributes;
+        TextString attrname = {0};
+        char nametext[MAX_GETATTR_LEN] = "";
+
+        kmip_get_attribute_type_text(nametext, sizeof(nametext), attribs[i]);
+
+        attrname.value = nametext;
+        attrname.size = strlen(nametext);
+
+        item->data = kmip_deep_copy_text_string(ctx, &attrname);
+        kmip_linked_list_enqueue(name_list, item);
+    }
+    names.name_list = name_list;
+
+    GetAttributesRequestPayload garp = {0};
+    garp.attribute_names = &names;
+    garp.unique_identifier = &id;
 
     RequestBatchItem rbi = {0};
     kmip_init_request_batch_item(&rbi);
-    rbi.operation = KMIP_OP_LOCATE;
-    rbi.request_payload = &lrp;
+    rbi.operation = KMIP_OP_GET_ATTRIBUTES;
+    rbi.request_payload = &garp;
 
     RequestMessage rm = {0};
     rm.request_header = &rh;
@@ -190,7 +219,7 @@ int use_low_level_api(KMIP *ctx, BIO *bio, Attribute* attribs, size_t attrib_cou
         if(encoding == NULL)
         {
             printf("Failure: Could not automatically enlarge the encoding ");
-            printf("buffer for the Locate request.\n");
+            printf("buffer for the get attribute request.\n");
 
             return(KMIP_MEMORY_ALLOC_FAILED);
         }
@@ -202,7 +231,7 @@ int use_low_level_api(KMIP *ctx, BIO *bio, Attribute* attribs, size_t attrib_cou
 
     if(encode_result != KMIP_OK)
     {
-        printf("An error occurred while encoding the Locate request.\n");
+        printf("An error occurred while encoding the get attribute request.\n");
         printf("Error Code: %d\n", encode_result);
         printf("Error Name: ");
         kmip_print_error_string(stdout, encode_result);
@@ -223,19 +252,19 @@ int use_low_level_api(KMIP *ctx, BIO *bio, Attribute* attribs, size_t attrib_cou
     char *response = NULL;
     int response_size = 0;
 
-    printf("bio locate send request\n");
+    printf("bio get attribute send request\n");
 
     int result = kmip_bio_send_request_encoding(ctx, bio, (char *)encoding,
                                                 ctx->index - ctx->buffer, 
                                                 &response, &response_size);
 
-    printf("bio locate response = %p\n", response);
+    printf("bio get attribute response = %p\n", response);
 
 
     printf("\n");
     if(result < 0)
     {
-        printf("An error occurred in locate request.\n");
+        printf("An error occurred in get attribute request.\n");
         printf("Error Code: %d\n", result);
         printf("Error Name: ");
         kmip_print_error_string(stderr, result);
@@ -252,9 +281,11 @@ int use_low_level_api(KMIP *ctx, BIO *bio, Attribute* attribs, size_t attrib_cou
         return(result);
     }
 
+    kmip_free_attribute_names(ctx, &names);
+
     if (response)
     {
-        FILE* out = fopen( "/tmp/kmip_locate.dat", "w" );
+        FILE* out = fopen( "/tmp/kmip_get_attributes.dat", "w" );
         if (out)
         {
             if (fwrite( response, response_size, 1, out ) != 1 )
@@ -265,7 +296,7 @@ int use_low_level_api(KMIP *ctx, BIO *bio, Attribute* attribs, size_t attrib_cou
         printf("\n");
     }
 
-    printf("bio locate free encoding =  %p\n", encoding);
+    printf("bio get attributes free encoding =  %p\n", encoding);
     kmip_free_buffer(ctx, encoding, buffer_total_size);
     encoding = NULL;
     kmip_set_buffer(ctx, response, response_size);
@@ -275,7 +306,7 @@ int use_low_level_api(KMIP *ctx, BIO *bio, Attribute* attribs, size_t attrib_cou
     int decode_result = kmip_decode_response_message(ctx, &resp_m);
     if(decode_result != KMIP_OK)
     {
-        printf("An error occurred while decoding the Locate response.\n");
+        printf("An error occurred while decoding the get attributes response.\n");
         printf("Error Code: %d\n", decode_result);
         printf("Error Name: ");
         kmip_print_error_string(stderr, decode_result);
@@ -296,7 +327,7 @@ int use_low_level_api(KMIP *ctx, BIO *bio, Attribute* attribs, size_t attrib_cou
 
     if(resp_m.batch_count != 1 || resp_m.batch_items == NULL)
     {
-        printf("Expected to find one batch item in the Locate response.\n");
+        printf("Expected to find one batch item in the get attributes response.\n");
         kmip_free_response_message(ctx, &resp_m);
         kmip_free_buffer(ctx, response, response_size);
         response = NULL;
@@ -314,14 +345,10 @@ int use_low_level_api(KMIP *ctx, BIO *bio, Attribute* attribs, size_t attrib_cou
 
     if(result == KMIP_STATUS_SUCCESS)
     {
-        kmip_copy_locate_result(locate_result, (LocateResponsePayload*) req.response_payload);
+        kmip_copy_get_attributes_result(getattributes_result, (GetAttributesResponsePayload*) req.response_payload);
     }
 
-    printf("bio locate free response resp_m =  %p, response = %p\n", (void*)&resp_m, response);
-    if (locate_result->ids_size)
-    {
-        printf("id[0] = %s\n", locate_result->ids[0]);
-    }
+    printf("bio get attributes free response resp_m =  %p, response = %p\n", (void*)&resp_m, response);
 
     /* Clean up the response message, the response buffer, and the KMIP */
     /* context.                                                         */
@@ -331,51 +358,17 @@ int use_low_level_api(KMIP *ctx, BIO *bio, Attribute* attribs, size_t attrib_cou
 
     kmip_set_buffer(ctx, NULL, 0);
 
-    printf("bio locate done \n");
+    printf("bio get attr done \n");
 
     return(result_status);
 }
 
 
-Credential* get_credential(char* device_serial_number,char* device_identifier, char* machine_identifier )
-{
-    static Credential credential = {0};
-    static DeviceCredential devc = {0};
-    static TextString sn = {0};
-    static TextString did = {0};
-    static TextString mid = {0};
-
-    memset(&devc,0, sizeof(devc) );
-    if (device_serial_number)
-    {
-        sn.value = device_serial_number;
-        sn.size = kmip_strnlen_s(device_serial_number, 50);
-        devc.device_serial_number = &sn;
-    }
-    if (device_identifier)
-    {
-        did.value = device_identifier;
-        did.size = kmip_strnlen_s(device_identifier, 50);
-        devc.device_identifier = &did;
-    }
-    if (machine_identifier)
-    {
-        mid.value = machine_identifier;
-        mid.size = kmip_strnlen_s(machine_identifier, 50);
-        devc.machine_identifier = &mid;
-    }
-
-    credential.credential_type = KMIP_CRED_DEVICE;
-    credential.credential_value = &devc;
-
-    return &credential;
-}
-
 int
 use_mid_level_api(BIO* bio,
-                  char *key_name,
-                  char *group,
-                  LocateResponse* locate_result)
+                  char *uuid,
+                  enum attribute_type* attribs, size_t attrib_count,
+                  GetAttributesResponse* getattributes_result)
 {
     int result;
 
@@ -384,92 +377,13 @@ use_mid_level_api(BIO* bio,
 
     kmip_init(&kmip_context, NULL, 0, KMIP_1_0);
     
-
-#define USE_DEVICE_CREDENTIALS
-#ifdef USE_DEVICE_CREDENTIALS
-
-    char device_serial_number[] = "J3003MFY";
-    char device_identifier[] = "7X06";
-    char machine_identifier[] = "ED98BF5CE30E11E7BA717ED30AE6BACF";
-
-    Credential* cred = get_credential(device_serial_number,device_identifier, machine_identifier );
-    result = kmip_add_credential(&kmip_context, cred);
-    if(result != KMIP_OK)
-    {
-        printf("Failed to add credential to the KMIP context.\n");
-    }
-#endif // USE_DEVICE_CREDENTIALS
-
-    /* Build the request message. */
-    Attribute a[6] = {{0}};
-    for(int i = 0; i < 6; i++)
-        kmip_init_attribute(&a[i]);
-
-
-    int idx = 0;
-
-    // look for symmetric key
-    enum object_type loctype = KMIP_OBJTYPE_SYMMETRIC_KEY;
-    a[idx].type = KMIP_ATTR_OBJECT_TYPE;
-    a[idx].value = &loctype;
-    idx++;
-
-    if (0)
-    {
-        enum cryptographic_algorithm algorithm = KMIP_CRYPTOALG_AES;
-        a[idx].type = KMIP_ATTR_CRYPTOGRAPHIC_ALGORITHM;
-        a[idx].value = &algorithm;
-        idx++;
-
-        int32 length = 256;
-        a[idx].type = KMIP_ATTR_CRYPTOGRAPHIC_LENGTH;
-        a[idx].value = &length;
-        idx++;
-
-        int32 mask = KMIP_CRYPTOMASK_ENCRYPT | KMIP_CRYPTOMASK_DECRYPT;
-        a[idx].type = KMIP_ATTR_CRYPTOGRAPHIC_USAGE_MASK;
-        a[idx].value = &mask;
-        idx++;
-    }
-
-    TextString s = { 0 };
-    Name n = { 0 };
-    if (key_name)
-    {
-        s.value = (char*) key_name;
-        s.size = kmip_strnlen_s(key_name, 128);
-
-        n.value = &s;
-        n.type = KMIP_NAME_UNINTERPRETED_TEXT_STRING;
-
-        a[idx].type = KMIP_ATTR_NAME;
-        a[idx].value = &n;
-
-        idx++;
-    }
-
-    TextString g = { 0 };
-    if (group)
-    {
-        g.value = (char*) group;
-        g.size = kmip_strnlen_s(group, 50);
-
-        a[idx].type = KMIP_ATTR_OBJECT_GROUP;
-        a[idx].value = &g;
-
-        idx++;
-    }
-
-    int attrib_count = idx;
-
-    //result = kmip_bio_locate_with_context(&kmip_context, bio, a, attrib_count, locate_result);
-    result = use_low_level_api(&kmip_context, bio, a, attrib_count, locate_result);
+    result = kmip_bio_get_attributes_with_context(&kmip_context, bio, uuid, attribs, attrib_count, getattributes_result);
     
     /* Handle the response results. */
     printf("\n");
     if(result < 0)
     {
-        printf("An error occurred while running the locate.");
+        printf("An error occurred while running the get attribute.");
         printf("Error Code: %d\n", result);
         printf("Error Name: ");
         kmip_print_error_string(stderr, result);
@@ -487,8 +401,8 @@ use_mid_level_api(BIO* bio,
         
         if(result == KMIP_STATUS_SUCCESS)
         {
-            printf("Locate results: ");
-            printf("located: %d\n", locate_result->located_items);
+            printf("get attributes results: ");
+            printf("got : %ld\n", (long)getattributes_result->attr_size);
             printf("\n");
         }
     }
@@ -509,13 +423,15 @@ main(int argc, char **argv)
     char *client_certificate = NULL;
     char *client_key = NULL;
     char *ca_certificate = NULL;
-    char *key_name = NULL;
-    char *group = NULL;
+    char *uuid = NULL;
+    enum attribute_type attribs[128];
+    size_t attrib_count = 0;
+
     int help = 0;
     
     int error = parse_arguments(argc, argv, &server_address, &server_port,
                                 &client_certificate, &client_key, &ca_certificate, 
-                                &key_name, &group, &help);
+                                &uuid, attribs, &attrib_count, &help);
     if(error)
     {
         return(error);
@@ -588,15 +504,42 @@ main(int argc, char **argv)
         return(-1);
     }
 
-    LocateResponse locate_result = {0};
-    int result = use_mid_level_api(bio, key_name, group, &locate_result);
+    int result;
+    GetAttributesResponse getattributes_result = {0};
+
+    int use_low = 1;
+    if (use_low)
+    {
+        KMIP kmip_context = {0};
+        kmip_init(&kmip_context, NULL, 0, KMIP_1_0);
+        result = use_low_level_api(&kmip_context, bio, uuid, attribs, attrib_count, &getattributes_result);
+        kmip_destroy(&kmip_context);
+    }
+    else
+    {
+        result = use_mid_level_api(bio, uuid, attribs, attrib_count, &getattributes_result);
+    }
 
     if(result == KMIP_STATUS_SUCCESS)
     {
-        printf("Locate results: ");
-        printf("located items: %d\n", locate_result.located_items);
-        printf("returned items: %zu\n", locate_result.ids_size);
-        printf("id[0]=  %s\n", locate_result.ids[0]);
+        printf("get attr results: ");
+        printf("returned items: %zu\n", getattributes_result.attr_size);
+        for (int i=0; i<(int)getattributes_result.attr_size; i++)
+        {
+            if (getattributes_result.attr_info[i].attr_subtype[0] != 0)
+            {
+                printf("attr[%d]: \"%s(%s)\" = %s\n", i,
+                       getattributes_result.attr_info[i].attr_name,
+                       getattributes_result.attr_info[i].attr_subtype,
+                       getattributes_result.attr_info[i].attr_value);
+            }
+            else
+            {
+                printf("attr[%d]: \"%s\" = %s\n", i,
+                       getattributes_result.attr_info[i].attr_name,
+                       getattributes_result.attr_info[i].attr_value);
+            }
+        }
         printf("\n");
     }
 

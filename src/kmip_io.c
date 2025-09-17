@@ -1303,6 +1303,11 @@ kmip_print_attribute_type_enum(FILE *f, enum attribute_type value)
         }
         break;
 
+        case KMIP_ATTR_INITIAL_DATE:
+        {
+            fprintf(f, "Initial Date");
+        } break;
+
         case KMIP_ATTR_ACTIVATION_DATE:
         {
             fprintf(f, "Activation Date");
@@ -2536,6 +2541,7 @@ kmip_print_attribute_value(FILE *f, int indent, enum attribute_type type, void *
         }
         break;
 
+        case KMIP_ATTR_INITIAL_DATE:
         case KMIP_ATTR_ACTIVATION_DATE:
         case KMIP_ATTR_DEACTIVATION_DATE:
         case KMIP_ATTR_PROCESS_START_DATE:
@@ -2874,6 +2880,10 @@ kmip_print_request_payload(FILE *f, int indent, enum operation type, void *value
         kmip_print_destroy_request_payload(f, indent, value);
         break;
 
+        case KMIP_OP_GET_ATTRIBUTES:
+        kmip_print_get_attributes_request_payload(f, indent, value);
+        break;
+
         case KMIP_OP_QUERY:
         kmip_print_query_request_payload(f, indent, value);
         break;
@@ -2909,6 +2919,10 @@ kmip_print_response_payload(FILE *f, int indent, enum operation type, void *valu
         kmip_print_destroy_response_payload(f, indent, value);
         break;
         
+        case KMIP_OP_GET_ATTRIBUTES:
+        kmip_print_get_attributes_response_payload(f, indent, value);
+        break;
+
         case KMIP_OP_QUERY:
         kmip_print_query_response_payload(f, indent, value);
         break;

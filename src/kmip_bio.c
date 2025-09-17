@@ -1112,7 +1112,6 @@ int kmip_bio_create_symmetric_key_with_context(KMIP *ctx, BIO *bio,
         kmip_free_buffer(ctx, encoding, buffer_total_size);
         encoding = NULL;
         kmip_set_buffer(ctx, NULL, 0);
-        kmip_destroy(ctx);
         return(result);
     }
     
@@ -2132,9 +2131,6 @@ int kmip_bio_locate_with_context(KMIP *ctx, BIO *bio, Attribute* attribs, size_t
         return(result);
     }
 
-    kmip_free_locate_request_payload(ctx, &lrp);
-
-
     if (response)
     {
         FILE* out = fopen( "/tmp/kmip_locate.dat", "w" );
@@ -2178,6 +2174,174 @@ int kmip_bio_locate_with_context(KMIP *ctx, BIO *bio, Attribute* attribs, size_t
     if(result == KMIP_STATUS_SUCCESS)
     {
         kmip_copy_locate_result(locate_result, (LocateResponsePayload*) resp_item.response_payload);
+    }
+
+    /* Clean up the response message, the response buffer, and the KMIP */
+    /* context.                                                         */
+    kmip_free_response_message(ctx, &resp_m);
+    kmip_free_buffer(ctx, response, response_size);
+    response = NULL;
+
+    return(result_status);
+}
+
+int kmip_bio_get_attributes_with_context(KMIP *ctx, BIO *bio, char *uuid, enum attribute_type* attribs, size_t attrib_count, GetAttributesResponse* getattributes_result)
+{
+    if (ctx == NULL || bio == NULL || uuid == NULL ||  attribs == NULL || attrib_count == 0 || getattributes_result == NULL)
+    {
+        return(KMIP_ARG_INVALID);
+    }
+
+    size_t buffer_blocks = 1;
+    size_t buffer_block_size = 1024;
+    size_t buffer_total_size = buffer_blocks * buffer_block_size;
+
+    uint8 *encoding = ctx->calloc_func(ctx->state, buffer_blocks, buffer_block_size);
+    if(encoding == NULL)
+    {
+        return(KMIP_MEMORY_ALLOC_FAILED);
+    }
+    kmip_set_buffer(ctx, encoding, buffer_total_size);
+
+    /* Build the request message. */
+
+
+    ProtocolVersion pv = {0};
+    kmip_init_protocol_version(&pv, ctx->version);
+
+    RequestHeader rh = {0};
+    kmip_init_request_header(&rh);
+
+    rh.protocol_version = &pv;
+    rh.maximum_response_size = ctx->max_message_size;
+    rh.time_stamp = time(NULL);
+    rh.batch_count = 1;
+
+    TextString id = {0};
+    id.value = uuid;
+    id.size = strlen(uuid);
+
+    // convert input array of attr types to list of attribute names
+    AttributeNames names = {0};
+    LinkedList *name_list = ctx->calloc_func(ctx->state, 1, sizeof(LinkedList));
+    for(size_t i = 0; i < attrib_count; i++)
+    {
+        LinkedListItem *item = ctx->calloc_func(ctx->state, 1, sizeof(LinkedListItem));
+
+        TextString attrname = {0};
+        char nametext[MAX_GETATTR_LEN] = "";
+
+        kmip_get_attribute_type_text(nametext, sizeof(nametext), attribs[i]);
+
+        attrname.value = nametext;
+        attrname.size = strlen(nametext);
+
+        item->data = kmip_deep_copy_text_string(ctx, &attrname);
+        kmip_linked_list_enqueue(name_list, item);
+    }
+    names.name_list = name_list;
+
+    GetAttributesRequestPayload garp = {0};
+    garp.attribute_names = &names;
+    garp.unique_identifier = &id;
+
+    RequestBatchItem rbi = {0};
+    kmip_init_request_batch_item(&rbi);
+    rbi.operation = KMIP_OP_GET_ATTRIBUTES;
+    rbi.request_payload = &garp;
+
+    RequestMessage rm = {0};
+    rm.request_header = &rh;
+    rm.batch_items = &rbi;
+    rm.batch_count = 1;
+
+    /* Encode the request message. Dynamically resize the encoding buffer */
+    /* if it's not big enough. Once encoding succeeds, send the request   */
+    /* message.                                                           */
+    int encode_result = kmip_encode_request_message(ctx, &rm);
+    while(encode_result == KMIP_ERROR_BUFFER_FULL)
+    {
+        kmip_reset(ctx);
+        ctx->free_func(ctx->state, encoding);
+
+        buffer_blocks += 1;
+        buffer_total_size = buffer_blocks * buffer_block_size;
+
+        encoding = ctx->calloc_func(ctx->state, buffer_blocks, buffer_block_size);
+        if(encoding == NULL)
+        {
+            return(KMIP_MEMORY_ALLOC_FAILED);
+        }
+
+        kmip_set_buffer(ctx, encoding, buffer_total_size);
+        encode_result = kmip_encode_request_message(ctx, &rm);
+    }
+
+    if(encode_result != KMIP_OK)
+    {
+        kmip_free_buffer(ctx, encoding, buffer_total_size);
+        encoding = NULL;
+        kmip_set_buffer(ctx, NULL, 0);
+        return(encode_result);
+    }
+
+    char *response = NULL;
+    int response_size = 0;
+
+    int result = kmip_bio_send_request_encoding(ctx, bio, (char *)encoding, ctx->index - ctx->buffer, &response, &response_size);
+    if(result < 0)
+    {
+        kmip_free_buffer(ctx, encoding, buffer_total_size);
+        kmip_free_buffer(ctx, response, response_size);
+        encoding = NULL;
+        response = NULL;
+        kmip_set_buffer(ctx, NULL, 0);
+        return(result);
+    }
+
+    if (response)
+    {
+        FILE* out = fopen( "/tmp/kmip_getattributes.dat", "w" );
+        if (out)
+        {
+            fwrite( response, response_size, 1, out );
+            fclose(out);
+        }
+    }
+
+    kmip_free_buffer(ctx, encoding, buffer_total_size);
+    encoding = NULL;
+    kmip_set_buffer(ctx, response, response_size);
+
+    /* Decode the response message and retrieve the operation results. */
+    ResponseMessage resp_m = {0};
+    int decode_result = kmip_decode_response_message(ctx, &resp_m);
+    if(decode_result != KMIP_OK)
+    {
+        kmip_free_response_message(ctx, &resp_m);
+        kmip_free_buffer(ctx, response, response_size);
+        response = NULL;
+        kmip_set_buffer(ctx, NULL, 0);
+        return(decode_result);
+    }
+
+    if(resp_m.batch_count != 1 || resp_m.batch_items == NULL)
+    {
+        kmip_free_response_message(ctx, &resp_m);
+        kmip_free_buffer(ctx, response, response_size);
+        response = NULL;
+        kmip_set_buffer(ctx, NULL, 0);
+        return(KMIP_MALFORMED_RESPONSE);
+    }
+
+    ResponseBatchItem resp_item = resp_m.batch_items[0];
+    enum result_status result_status = resp_item.result_status;
+
+    kmip_set_last_result(&resp_item);
+
+    if(result == KMIP_STATUS_SUCCESS)
+    {
+        kmip_copy_get_attributes_result(getattributes_result, (GetAttributesResponsePayload*) resp_item.response_payload);
     }
 
     /* Clean up the response message, the response buffer, and the KMIP */

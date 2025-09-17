@@ -727,6 +727,7 @@ enum tag
     KMIP_TAG_DEACTIVATION_DATE                = 0x42002F,
     KMIP_TAG_ENCRYPTION_KEY_INFORMATION       = 0x420036,
     KMIP_TAG_HASHING_ALGORITHM                = 0x420038,
+    KMIP_TAG_INITIAL_DATE                     = 0x420039,
     KMIP_TAG_IV_COUNTER_NONCE                 = 0x42003D,
     KMIP_TAG_KEY                              = 0x42003F,
     KMIP_TAG_KEY_BLOCK                        = 0x420040,
@@ -1315,6 +1316,24 @@ typedef struct get_attributes_response_payload
     Attributes *attributes;
 } GetAttributesResponsePayload;
 
+
+#define MAX_GETATTR_CNT   32
+#define MAX_GETATTR_LEN   128
+
+typedef struct get_attribute_info
+{
+    char    attr_name[MAX_GETATTR_LEN];
+    char    attr_subtype[MAX_GETATTR_LEN];
+    char    attr_value[MAX_GETATTR_LEN];
+} GetAttributeInfo;
+
+typedef struct get_attributes_response
+{
+    char             unique_identifier[MAX_GETATTR_LEN];
+    size_t           attr_size;
+    GetAttributeInfo attr_info[MAX_GETATTR_CNT];
+} GetAttributesResponse;
+
 typedef struct query_request_payload
 {
     Functions* functions;
@@ -1468,6 +1487,16 @@ do                                                      \
     }                                                   \
 } while(0)
 
+#define CHECK_PADDING_RC(A, B, C)                       \
+do                                                      \
+{                                                       \
+    if((B) != 0)                                        \
+    {                                                   \
+        kmip_push_error_frame((A), __func__, __LINE__); \
+        (C) = KMIP_PADDING_MISMATCH;                    \
+    }                                                   \
+} while(0)
+
 #define CHECK_BOOLEAN(A, B)                             \
 do                                                      \
 {                                                       \
@@ -1551,6 +1580,10 @@ size_t kmip_strnlen_s(const char *, size_t);
 LinkedListItem *kmip_linked_list_pop(LinkedList *);
 void kmip_linked_list_push(LinkedList *, LinkedListItem *);
 void kmip_linked_list_enqueue(LinkedList *, LinkedListItem *);
+
+const char* kmip_get_error_string(int);
+int kmip_set_attribute_name(enum attribute_type, TextString*);
+void kmip_get_attribute_type_text(char*, size_t , enum attribute_type);
 
 /*
 Memory Handlers
@@ -1680,6 +1713,7 @@ void kmip_copy_objects(int objs[], size_t* objs_size, ObjectTypes *value, unsign
 void kmip_copy_operations(int ops[], size_t* ops_size, Operations *value, unsigned max_ops);
 void kmip_copy_query_result(QueryResponse* query_result, QueryResponsePayload *pld);
 void kmip_copy_locate_result(LocateResponse* locate_result, LocateResponsePayload *pld);
+void kmip_copy_get_attributes_result(GetAttributesResponse* get_attributes_result, GetAttributesResponsePayload *pld);
 
 /*
 Comparison Functions

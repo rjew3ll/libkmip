@@ -872,6 +872,7 @@ kmip_check_enum_value(enum kmip_version version, enum tag t, int value)
             case KMIP_OP_ACTIVATE:
             case KMIP_OP_QUERY:
             case KMIP_OP_LOCATE:
+            case KMIP_OP_GET_ATTRIBUTES:
             return(KMIP_OK);
             break;
             
@@ -1960,6 +1961,7 @@ kmip_free_attribute(KMIP *ctx, Attribute *value)
                 }
                 break;
 
+                case KMIP_ATTR_INITIAL_DATE:
                 case KMIP_ATTR_ACTIVATION_DATE:
                 case KMIP_ATTR_DEACTIVATION_DATE:
                 case KMIP_ATTR_PROCESS_START_DATE:
@@ -2702,6 +2704,10 @@ kmip_free_request_batch_item(KMIP *ctx, RequestBatchItem *value)
                 kmip_free_destroy_request_payload(ctx, (DestroyRequestPayload *)value->request_payload);
                 break;
                 
+                case KMIP_OP_GET_ATTRIBUTES:
+                kmip_free_get_attributes_request_payload(ctx, (GetAttributesRequestPayload *)value->request_payload);
+                break;
+
                 case KMIP_OP_QUERY:
                 kmip_free_query_request_payload(ctx, (QueryRequestPayload *)value->request_payload);
                 break;
@@ -2777,6 +2783,10 @@ kmip_free_response_batch_item(KMIP *ctx, ResponseBatchItem *value)
 
                 case KMIP_OP_DESTROY:
                 kmip_free_destroy_response_payload(ctx, (DestroyResponsePayload *)value->response_payload);
+                break;
+
+                case KMIP_OP_GET_ATTRIBUTES:
+                kmip_free_get_attributes_response_payload(ctx, (GetAttributesResponsePayload *)value->response_payload);
                 break;
 
                 case KMIP_OP_QUERY:
@@ -3647,6 +3657,7 @@ kmip_deep_copy_attribute(KMIP *ctx, const Attribute *value)
             }
         } break;
 
+        case KMIP_ATTR_INITIAL_DATE:
         case KMIP_ATTR_ACTIVATION_DATE:
         case KMIP_ATTR_DEACTIVATION_DATE:
         case KMIP_ATTR_PROCESS_START_DATE:
@@ -3734,6 +3745,298 @@ kmip_copy_objects(int objs[], size_t* objs_size, ObjectTypes *value, unsigned ma
 }
 
 void
+kmip_get_state_text(char* text, size_t text_size, enum state value)
+{
+    if(value == 0)
+    {
+        strncpy(text, "-", text_size);
+        text[text_size-1] = 0;
+        return;
+    }
+
+    switch(value)
+    {
+        case KMIP_STATE_PRE_ACTIVE:
+        strncpy(text, "Pre-Active", text_size);
+        break;
+
+        case KMIP_STATE_ACTIVE:
+        strncpy(text, "Active", text_size);
+        break;
+
+        case KMIP_STATE_DEACTIVATED:
+        strncpy(text, "Deactivated", text_size);
+        break;
+
+        case KMIP_STATE_COMPROMISED:
+        strncpy(text, "Compromised", text_size);
+        break;
+
+        case KMIP_STATE_DESTROYED:
+        strncpy(text, "Destroyed", text_size);
+        break;
+
+        case KMIP_STATE_DESTROYED_COMPROMISED:
+        strncpy(text, "Destroyed Compromised", text_size);
+        break;
+
+        default:
+        strncpy(text, "Unknown", text_size);
+        break;
+    };
+    text[text_size-1] = 0;
+    return;
+}
+
+
+void
+kmip_get_date_time_text(char* text, size_t text_size, int64 value)
+{
+    if(value <= KMIP_UNSET)
+    {
+        strncpy(text, "-", text_size);
+        text[text_size-1] = 0;
+    }
+    else
+    {
+        time_t t = (time_t)value;
+        struct tm *utc_time = gmtime(&t);
+        strncpy(text, asctime(utc_time), text_size);
+        text[text_size-1] = 0;
+    }
+    return;
+}
+
+
+void
+kmip_get_attribute_type_text(char* text, size_t text_size, enum attribute_type value)
+{
+    if((int)value == KMIP_UNSET)
+    {
+        strncpy(text, "-", text_size);
+        text[text_size-1] = 0;
+        return;
+    }
+
+    switch(value)
+    {
+        case KMIP_ATTR_APPLICATION_SPECIFIC_INFORMATION:
+        {
+            strncpy(text, "Application Specific Information", text_size);
+        }
+        break;
+
+        case KMIP_ATTR_UNIQUE_IDENTIFIER:
+        strncpy(text, "Unique Identifier", text_size);
+        break;
+
+        case KMIP_ATTR_NAME:
+        strncpy(text, "Name", text_size);
+        break;
+
+        case KMIP_ATTR_OBJECT_TYPE:
+        strncpy(text, "Object Type", text_size);
+        break;
+
+        case KMIP_ATTR_CRYPTOGRAPHIC_ALGORITHM:
+        strncpy(text, "Cryptographic Algorithm", text_size);
+        break;
+
+        case KMIP_ATTR_CRYPTOGRAPHIC_LENGTH:
+        strncpy(text, "Cryptographic Length", text_size);
+        break;
+
+        case KMIP_ATTR_OPERATION_POLICY_NAME:
+        strncpy(text, "Operation Policy Name", text_size);
+        break;
+
+        case KMIP_ATTR_CRYPTOGRAPHIC_USAGE_MASK:
+        strncpy(text, "Cryptographic Usage Mask", text_size);
+        break;
+
+        case KMIP_ATTR_STATE:
+        strncpy(text, "State", text_size);
+        break;
+
+        case KMIP_ATTR_OBJECT_GROUP:
+        {
+            strncpy(text, "Object Group", text_size);
+        }
+        break;
+
+        case KMIP_ATTR_CONTACT_INFORMATION:
+        {
+            strncpy(text, "Contact Information", text_size);
+        }
+        break;
+
+        case KMIP_ATTR_INITIAL_DATE:
+        {
+            strncpy(text, "Initial Date", text_size);
+        } break;
+
+        case KMIP_ATTR_ACTIVATION_DATE:
+        {
+            strncpy(text, "Activation Date", text_size);
+        } break;
+
+        case KMIP_ATTR_DEACTIVATION_DATE:
+        {
+            strncpy(text, "Deactivation Date", text_size);
+        } break;
+
+        case KMIP_ATTR_PROCESS_START_DATE:
+        {
+            strncpy(text, "Process Start Date", text_size);
+        } break;
+
+        case KMIP_ATTR_PROTECT_STOP_DATE:
+        {
+            strncpy(text, "Protect Stop Date", text_size);
+        } break;
+
+        case KMIP_ATTR_CRYPTOGRAPHIC_PARAMETERS:
+        {
+            strncpy(text, "Cryptographic Parameters", text_size);
+        } break;
+
+        default:
+        strncpy(text, "Unknown", text_size);
+        break;
+    };
+
+    text[text_size-1] = 0;
+
+    return;
+}
+
+
+void
+kmip_get_attribute_value_text(char* text, size_t text_size, enum attribute_type type, void *value)
+{
+    switch(type)
+    {
+        #if 0
+        case KMIP_ATTR_APPLICATION_SPECIFIC_INFORMATION:
+        {
+            kmip_print_application_specific_information(f, indent + 2, value);
+        }
+        break;
+        #endif
+
+        case KMIP_ATTR_UNIQUE_IDENTIFIER:
+            kmip_copy_textstring(text, value, text_size-1);
+        break;
+
+        case KMIP_ATTR_NAME:
+        if (value)
+        {
+            Name* name = value;
+            kmip_copy_textstring(text, name->value, text_size-1);
+        }
+        break;
+
+        #if 0
+        case KMIP_ATTR_OBJECT_TYPE:
+        kmip_print_object_type_enum(f, *(enum object_type *)value);
+        break;
+        #endif
+
+        #if 0
+        case KMIP_ATTR_CRYPTOGRAPHIC_ALGORITHM:
+        kmip_print_cryptographic_algorithm_enum(f, *(enum cryptographic_algorithm *)value);
+        break;
+
+        case KMIP_ATTR_CRYPTOGRAPHIC_LENGTH:
+        break;
+        #endif
+
+        case KMIP_ATTR_OPERATION_POLICY_NAME:
+        kmip_copy_textstring(text, value, text_size-1);
+        break;
+
+        #if 0
+        case KMIP_ATTR_CRYPTOGRAPHIC_USAGE_MASK:
+        kmip_print_cryptographic_usage_mask_enums(f, indent + 2, *(int32 *)value);
+        break;
+        #endif
+
+        case KMIP_ATTR_STATE:
+            kmip_get_state_text(text, text_size, *(enum state *)value);
+        break;
+
+        case KMIP_ATTR_OBJECT_GROUP:
+            kmip_copy_textstring(text, value, text_size-1);
+        break;
+
+        case KMIP_ATTR_CONTACT_INFORMATION:
+            kmip_copy_textstring(text, value, text_size-1);
+        break;
+
+        case KMIP_ATTR_INITIAL_DATE:
+        case KMIP_ATTR_ACTIVATION_DATE:
+        case KMIP_ATTR_DEACTIVATION_DATE:
+        case KMIP_ATTR_PROCESS_START_DATE:
+        case KMIP_ATTR_PROTECT_STOP_DATE:
+        {
+            kmip_get_date_time_text(text, text_size, *(int64 *)value);
+        } break;
+
+        #if 0
+        case KMIP_ATTR_CRYPTOGRAPHIC_PARAMETERS:
+        {
+            kmip_print_cryptographic_parameters(f, indent + 2, value);
+        } break;
+        #endif
+
+        default:
+        strncpy(text, "Unknown", text_size);
+        break;
+    };
+
+    text[text_size-1] = 0;
+    return;
+}
+
+
+void
+kmip_copy_attribute_text(GetAttributeInfo* attr_info, Attribute *value, unsigned max_attrs)
+{
+    if(value != NULL)
+    {
+        kmip_get_attribute_type_text(attr_info->attr_name, MAX_GETATTR_LEN, value->type );
+        kmip_get_attribute_value_text(attr_info->attr_value, MAX_GETATTR_LEN, value->type, value->value );
+        attr_info->attr_subtype[0] = 0;
+    }
+
+    return;
+}
+
+void
+kmip_copy_attributes_text(GetAttributeInfo attr_info[], size_t* attr_size, Attributes *value, unsigned max_attrs)
+{
+    if(value != NULL &&
+       value->attribute_list != NULL)
+    {
+        *attr_size = value->attribute_list->size;
+
+        LinkedListItem *curr = value->attribute_list->head;
+        size_t idx = 0;
+        while(curr != NULL && idx < max_attrs )
+        {
+            Attribute *attribute = (Attribute *)curr->data;
+
+            kmip_copy_attribute_text(&attr_info[idx], attribute, MAX_GETATTR_LEN-1);
+
+            curr = curr->next;
+            idx++;
+        }
+    }
+
+    return;
+}
+
+void
 kmip_copy_query_result(QueryResponse* query_result, QueryResponsePayload *pld)
 {
     if(pld != NULL)
@@ -3790,6 +4093,20 @@ kmip_copy_locate_result(LocateResponse* locate_result, LocateResponsePayload *pl
         locate_result->located_items = pld->located_items;
 
         kmip_copy_unique_identifiers(locate_result->ids, &locate_result->ids_size, pld->unique_ids, MAX_LOCATE_IDS);
+    }
+}
+
+void
+kmip_copy_get_attributes_result(GetAttributesResponse* get_attributes_result, GetAttributesResponsePayload *pld)
+{
+    if(get_attributes_result != NULL &&
+       pld != NULL)
+    {
+        kmip_copy_textstring(get_attributes_result->unique_identifier, pld->unique_identifier, MAX_GETATTR_LEN-1);
+
+        get_attributes_result->attr_size = 0;
+
+        kmip_copy_attributes_text(get_attributes_result->attr_info, &get_attributes_result->attr_size, pld->attributes, MAX_GETATTR_CNT);
     }
 }
 
@@ -4057,6 +4374,7 @@ kmip_compare_attribute(const Attribute *a, const Attribute *b)
                 }
                 break;
 
+                case KMIP_ATTR_INITIAL_DATE:
                 case KMIP_ATTR_ACTIVATION_DATE:
                 case KMIP_ATTR_DEACTIVATION_DATE:
                 case KMIP_ATTR_PROCESS_START_DATE:
@@ -5272,6 +5590,13 @@ kmip_compare_request_batch_item(const RequestBatchItem *a, const RequestBatchIte
                     return(KMIP_FALSE);
                 }
                 break;
+
+                case KMIP_OP_GET_ATTRIBUTES:
+                if(kmip_compare_get_attributes_request_payload((GetAttributesRequestPayload *)a->request_payload, (GetAttributesRequestPayload *)b->request_payload) == KMIP_FALSE)
+                {
+                    return(KMIP_FALSE);
+                }
+                break;
                 
                 case KMIP_OP_QUERY:
                 if(kmip_compare_query_request_payload((QueryRequestPayload *)a->request_payload, (QueryRequestPayload *)b->request_payload) == KMIP_FALSE)
@@ -5399,6 +5724,13 @@ kmip_compare_response_batch_item(const ResponseBatchItem *a, const ResponseBatch
                 }
                 break;
                 
+                case KMIP_OP_GET_ATTRIBUTES:
+                if(kmip_compare_get_attributes_response_payload((GetAttributesResponsePayload *)a->response_payload, (GetAttributesResponsePayload *)b->response_payload) == KMIP_FALSE)
+                {
+                    return(KMIP_FALSE);
+                }
+                break;
+
                 case KMIP_OP_QUERY:
                 if(kmip_compare_query_response_payload((QueryResponsePayload *)a->response_payload, (QueryResponsePayload *)b->response_payload) == KMIP_FALSE)
                 {
@@ -6930,10 +7262,9 @@ kmip_encode_protection_storage_masks(KMIP *ctx, const ProtectionStorageMasks *va
 }
 
 int
-kmip_encode_attribute_name(KMIP *ctx, enum attribute_type value)
+kmip_set_attribute_name(enum attribute_type value, TextString* _attribute_name)
 {
-    int result = 0;
-    enum tag t = KMIP_TAG_ATTRIBUTE_NAME;
+    int result = KMIP_OK;
     TextString attribute_name = {0};
     
     switch(value)
@@ -6992,6 +7323,12 @@ kmip_encode_attribute_name(KMIP *ctx, enum attribute_type value)
         }
         break;
 
+        case KMIP_ATTR_INITIAL_DATE:
+        {
+            attribute_name.value = "Initial Date";
+            attribute_name.size = 12;
+        } break;
+
         case KMIP_ATTR_ACTIVATION_DATE:
         {
             attribute_name.value = "Activation Date";
@@ -7029,14 +7366,35 @@ kmip_encode_attribute_name(KMIP *ctx, enum attribute_type value)
         } break;
 
         default:
-        kmip_push_error_frame(ctx, __func__, __LINE__);
-        return(KMIP_ERROR_ATTR_UNSUPPORTED);
+        {
+            attribute_name.value = "Unsupported Attribute";
+            attribute_name.size = 21;
+        }
         break;
     };
-    
+
+    *_attribute_name = attribute_name;
+
+    return(result);
+}
+
+int
+kmip_encode_attribute_name(KMIP *ctx, enum attribute_type value)
+{
+    int result = 0;
+    enum tag t = KMIP_TAG_ATTRIBUTE_NAME;
+    TextString attribute_name = {0};
+
+    result = kmip_set_attribute_name(value, &attribute_name);
+    if (result != KMIP_OK)
+    {
+        kmip_push_error_frame(ctx, __func__, __LINE__);
+        return(KMIP_ERROR_ATTR_UNSUPPORTED);
+    }
+
     result = kmip_encode_text_string(ctx, t, &attribute_name);
     CHECK_RESULT(ctx, result);
-    
+
     return(KMIP_OK);
 }
 
@@ -7159,6 +7517,7 @@ kmip_encode_attribute_v1(KMIP *ctx, const Attribute *value)
         }
         break;
 
+        case KMIP_ATTR_INITIAL_DATE:
         case KMIP_ATTR_ACTIVATION_DATE:
         case KMIP_ATTR_DEACTIVATION_DATE:
         case KMIP_ATTR_PROCESS_START_DATE:
@@ -7311,6 +7670,15 @@ kmip_encode_attribute_v2(KMIP *ctx, const Attribute *value)
             );
         }
         break;
+
+        case KMIP_ATTR_INITIAL_DATE:
+        {
+            result = kmip_encode_date_time(
+                ctx,
+                KMIP_TAG_INITIAL_DATE,
+                *(int64 *)value->value
+            );
+        } break;
 
         case KMIP_ATTR_ACTIVATION_DATE:
         {
@@ -8938,6 +9306,10 @@ kmip_encode_request_batch_item(KMIP *ctx, const RequestBatchItem *value)
         result = kmip_encode_destroy_request_payload(ctx, (DestroyRequestPayload*)value->request_payload);
         break;
         
+        case KMIP_OP_GET_ATTRIBUTES:
+        result = kmip_encode_get_attributes_request_payload(ctx, (GetAttributesRequestPayload*)value->request_payload);
+        break;
+
         case KMIP_OP_QUERY:
         result = kmip_encode_query_request_payload(ctx, (QueryRequestPayload*)value->request_payload);
         break;
@@ -9018,10 +9390,14 @@ kmip_encode_response_batch_item(KMIP *ctx, const ResponseBatchItem *value)
         result = kmip_encode_activate_response_payload(ctx, (ActivateResponsePayload*)value->response_payload);
         break;
         
+        case KMIP_OP_GET_ATTRIBUTES:
+        result = kmip_encode_get_attributes_response_payload(ctx, (GetAttributesResponsePayload*)value->response_payload);
+        break;
+        
         case KMIP_OP_DESTROY:
         result = kmip_encode_destroy_response_payload(ctx, (DestroyResponsePayload*)value->response_payload);
         break;
-        
+
         case KMIP_OP_QUERY:
         result = kmip_encode_query_response_payload(ctx, (QueryResponsePayload*)value->response_payload);
         break;
@@ -9440,6 +9816,7 @@ kmip_decode_text_string(KMIP *ctx, enum tag t, TextString *value)
     uint32 length = 0;
     uint8 padding = 0;
     int8 spacer = 0;
+    int rc = KMIP_OK;
     
     kmip_decode_int32_be(ctx, &tag_type);
     CHECK_TAG_TYPE(ctx, tag_type, t, KMIP_TYPE_TEXT_STRING);
@@ -9460,10 +9837,15 @@ kmip_decode_text_string(KMIP *ctx, enum tag t, TextString *value)
     for(uint8 i = 0; i < padding; i++)
     {
         kmip_decode_int8_be(ctx, &spacer);
-        CHECK_PADDING(ctx, spacer);
+        CHECK_PADDING_RC(ctx, spacer, rc);
+	if(rc != KMIP_OK)
+        {
+            kmip_free_text_string(ctx, value);
+	    break;
+        }
     }
     
-    return(KMIP_OK);
+    return(rc);
 }
 
 int
@@ -9619,6 +10001,10 @@ kmip_decode_attribute_name(KMIP *ctx, enum attribute_type *value)
     else if((n.size == 12) && (strncmp(n.value, "Object Group", 12) == 0))
     {
         *value = KMIP_ATTR_OBJECT_GROUP;
+    }
+    else if((n.size == 12) && (strncmp(n.value, "Initial Date", 12) == 0))
+    {
+        *value = KMIP_ATTR_INITIAL_DATE;
     }
     else if((n.size == 15) && (strncmp(n.value, "Activation Date", 15) == 0))
     {
@@ -9892,6 +10278,15 @@ kmip_decode_attribute_v1(KMIP *ctx, Attribute *value)
         }
         break;
 
+        case KMIP_ATTR_INITIAL_DATE:
+        {
+            value->value = ctx->calloc_func(ctx->state, 1, sizeof(int64));
+            CHECK_NEW_MEMORY(ctx, value->value, sizeof(int64), "InitialDate date time");
+
+            result = kmip_decode_date_time(ctx, t, (int64*)value->value);
+            CHECK_RESULT(ctx, result);
+        } break;
+
         case KMIP_ATTR_ACTIVATION_DATE:
         {
             value->value = ctx->calloc_func(ctx->state, 1, sizeof(int64));
@@ -10061,6 +10456,16 @@ kmip_decode_attribute_v2(KMIP *ctx, Attribute *value)
             CHECK_RESULT(ctx, result);
         }
         break;
+
+        case KMIP_TAG_INITIAL_DATE:
+        {
+            value->type = KMIP_ATTR_INITIAL_DATE;
+            value->value = ctx->calloc_func(ctx->state, 1, sizeof(int64));
+            CHECK_NEW_MEMORY(ctx, value->value, sizeof(int64), "InitialDate date time");
+
+            result = kmip_decode_date_time(ctx, KMIP_TAG_INITIAL_DATE, (int64*)value->value);
+            CHECK_RESULT(ctx, result);
+        } break;
 
         case KMIP_TAG_ACTIVATION_DATE:
         {
@@ -11433,6 +11838,12 @@ kmip_decode_request_batch_item(KMIP *ctx, RequestBatchItem *value)
         result = kmip_decode_destroy_request_payload(ctx, (DestroyRequestPayload*)value->request_payload);
         break;
         
+        case KMIP_OP_GET_ATTRIBUTES:
+        value->request_payload = ctx->calloc_func(ctx->state, 1, sizeof(GetAttributesRequestPayload));
+        CHECK_NEW_MEMORY(ctx, value->request_payload, sizeof(GetAttributesRequestPayload), "GetAttributesRequestPayload structure");
+        result = kmip_decode_get_attributes_request_payload(ctx, (GetAttributesRequestPayload*)value->request_payload);
+        break;
+
         case KMIP_OP_QUERY:
         value->request_payload = ctx->calloc_func(ctx->state, 1, sizeof(QueryRequestPayload));
         CHECK_NEW_MEMORY(ctx, value->request_payload, sizeof(QueryRequestPayload), "QueryRequestPayload structure");
@@ -11544,6 +11955,12 @@ kmip_decode_response_batch_item(KMIP *ctx, ResponseBatchItem *value)
             result = kmip_decode_destroy_response_payload(ctx, value->response_payload);
             break;
             
+            case KMIP_OP_GET_ATTRIBUTES:
+            value->response_payload = ctx->calloc_func(ctx->state, 1, sizeof(GetAttributesResponsePayload));
+            CHECK_NEW_MEMORY(ctx, value->response_payload, sizeof(GetAttributesResponsePayload), "GetAttributesResponsePayload structure");
+            result = kmip_decode_get_attributes_response_payload(ctx, value->response_payload);
+            break;
+
             case KMIP_OP_QUERY:
             value->response_payload = ctx->calloc_func(ctx->state, 1, sizeof(QueryResponsePayload));
             CHECK_NEW_MEMORY(ctx, value->response_payload, sizeof(QueryResponsePayload), "QueryResponsePayload structure");
@@ -12512,4 +12929,113 @@ kmip_decode_unique_identifiers(KMIP* ctx, UniqueIdentifiers* value)
     }
 
     return(KMIP_OK);
+}
+
+
+const char*
+kmip_get_error_string(int value)
+{
+    /* TODO (ph) Move this to a static string array. */
+    switch(value)
+    {
+        case 0:
+        {
+            return("KMIP_OK");
+        } break;
+
+        case -1:
+        {
+            return("KMIP_NOT_IMPLEMENTED");
+        } break;
+
+        case -2:
+        {
+            return("KMIP_ERROR_BUFFER_FULL");
+        } break;
+
+        case -3:
+        {
+            return("KMIP_ERROR_ATTR_UNSUPPORTED");
+        } break;
+
+        case -4:
+        {
+            return("KMIP_TAG_MISMATCH");
+        } break;
+
+        case -5:
+        {
+            return("KMIP_TYPE_MISMATCH");
+        } break;
+
+        case -6:
+        {
+            return("KMIP_LENGTH_MISMATCH");
+        } break;
+
+        case -7:
+        {
+            return("KMIP_PADDING_MISMATCH");
+        } break;
+
+        case -8:
+        {
+            return("KMIP_BOOLEAN_MISMATCH");
+        } break;
+
+        case -9:
+        {
+            return("KMIP_ENUM_MISMATCH");
+        } break;
+
+        case -10:
+        {
+            return("KMIP_ENUM_UNSUPPORTED");
+        } break;
+
+        case -11:
+        {
+            return("KMIP_INVALID_FOR_VERSION");
+        } break;
+
+        case -12:
+        {
+            return("KMIP_MEMORY_ALLOC_FAILED");
+        } break;
+
+        case -13:
+        {
+            return("KMIP_IO_FAILURE");
+        } break;
+
+        case -14:
+        {
+            return("KMIP_EXCEED_MAX_MESSAGE_SIZE");
+        } break;
+
+        case -15:
+        {
+            return("KMIP_MALFORMED_RESPONSE");
+        } break;
+
+        case -16:
+        {
+            return("KMIP_OBJECT_MISMATCH");
+        } break;
+
+        case -17:
+        {
+            return("KMIP_ARG_INVALID");
+        } break;
+
+        case -18:
+        {
+            return("KMIP_ERROR_BUFFER_UNDERFULL");
+        } break;
+
+        default:
+            break;
+    };
+
+    return("Unrecognized Error Code");
 }
