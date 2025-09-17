@@ -10639,6 +10639,10 @@ kmip_decode_attribute_name(KMIP *ctx, enum attribute_type *value)
     {
         *value = KMIP_ATTR_CONTACT_INFORMATION;
     }
+    else if((6 == n.size) && (strncmp(n.value, "Digest", 6) == 0))
+    {
+        *value = KMIP_ATTR_DIGEST;
+    }
     /* TODO (ph) Add all remaining attributes here. */
     else
     {
@@ -10846,6 +10850,52 @@ kmip_decode_attribute_v1(KMIP *ctx, Attribute *value)
 
                 kmip_encode_int32_be(ctx, TAG_TYPE(KMIP_TAG_ATTRIBUTE_VALUE, KMIP_TYPE_STRUCTURE));
                 ctx->index = curr_index;
+            }
+            else
+            {
+                result = KMIP_TAG_MISMATCH;
+            }
+
+            CHECK_RESULT(ctx, result);
+        } break;
+
+        case KMIP_ATTR_DIGEST:
+        {
+            if(kmip_is_tag_type_next(ctx, KMIP_TAG_ATTRIBUTE_VALUE, KMIP_TYPE_STRUCTURE))
+            {
+
+                int result = 0;
+                int32 tag_type = 0;
+                uint32 length = 0;
+                
+                kmip_decode_int32_be(ctx, &tag_type);
+                
+                kmip_decode_length(ctx, &length);
+                CHECK_BUFFER_FULL(ctx, length);
+
+                if(kmip_is_tag_next(ctx, KMIP_TAG_HASHING_ALGORITHM))
+                {
+                    enum hashing_algorithm hashing_algorithm;
+
+                    result = kmip_decode_enum(ctx, KMIP_TAG_HASHING_ALGORITHM, &hashing_algorithm);
+                    CHECK_RESULT(ctx, result);
+                    CHECK_ENUM(ctx, KMIP_TAG_HASHING_ALGORITHM, hashing_algorithm);
+                }
+                
+                if(kmip_is_tag_next(ctx, KMIP_TAG_DIGEST_VALUE))
+                {
+                    ByteString* pDigestValue;
+
+                    pDigestValue = ctx->calloc_func(ctx->state, 1, sizeof(ByteString));
+                    CHECK_NEW_MEMORY(ctx, pDigestValue, sizeof(ByteString), "Digest value byte string");
+                    
+                    result = kmip_decode_byte_string(ctx, KMIP_TAG_DIGEST_VALUE, pDigestValue);
+                    CHECK_RESULT(ctx, result);
+
+                    // Don't need to return the digest value at this time, just free it
+                    kmip_free_byte_string( ctx, pDigestValue );
+                    ctx->free_func(ctx->state, pDigestValue);
+                }
             }
             else
             {

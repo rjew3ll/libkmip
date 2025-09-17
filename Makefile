@@ -74,6 +74,7 @@ DEMO_O_FILES += $(OBJ_DIR)/demo_query.o
 DEMO_O_FILES += $(OBJ_DIR)/demo_activate.o
 DEMO_O_FILES += $(OBJ_DIR)/demo_locate.o
 DEMO_O_FILES += $(OBJ_DIR)/demo_getattr.o
+DEMO_O_FILES += $(OBJ_DIR)/demo_rekey.o
 
 TEST_O_FILES = $(OBJ_DIR)/tests.o
 
@@ -93,7 +94,8 @@ demos: objs \
        $(BIN_DIR)/demo_query \
        $(BIN_DIR)/demo_activate \
        $(BIN_DIR)/demo_locate \
-       $(BIN_DIR)/demo_getattr
+       $(BIN_DIR)/demo_getattr \
+       $(BIN_DIR)/demo_rekey
 
 tests: objs \
        $(TEST_O_FILES) \
@@ -116,6 +118,8 @@ $(BIN_DIR)/demo_activate: $(OBJ_DIR)/demo_activate.o $(SRC_O_FILES)
 $(BIN_DIR)/demo_locate: $(OBJ_DIR)/demo_locate.o $(SRC_O_FILES)
 	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 $(BIN_DIR)/demo_getattr: $(OBJ_DIR)/demo_getattr.o $(SRC_O_FILES)
+	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+$(BIN_DIR)/demo_rekey: $(OBJ_DIR)/demo_rekey.o $(SRC_O_FILES)
 	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 $(BIN_DIR)/tests: $(TEST_O_FILES) $(OBJ_DIR)/kmip.o $(OBJ_DIR)/kmip_io.o $(OBJ_DIR)/kmip_memset.o
@@ -144,6 +148,8 @@ $(OBJ_DIR)/demo_activate.o: $(DEMO_DIR)/demo_activate.c $(H_FILES)
 $(OBJ_DIR)/demo_locate.o: $(DEMO_DIR)/demo_locate.c $(H_FILES)
 	$(CC) $(CFLAGS) $(INC_FLAGS) -c $< -o $@
 $(OBJ_DIR)/demo_getattr.o: $(DEMO_DIR)/demo_getattr.c $(H_FILES)
+	$(CC) $(CFLAGS) $(INC_FLAGS) -c $< -o $@
+$(OBJ_DIR)/demo_rekey.o: $(DEMO_DIR)/demo_rekey.c $(H_FILES)
 	$(CC) $(CFLAGS) $(INC_FLAGS) -c $< -o $@
 
 $(OBJ_DIR)/tests.o: $(TEST_DIR)/tests.c $(INC_DIR)/kmip.h $(INC_DIR)/kmip_io.h $(INC_DIR)/kmip_memset.h
@@ -197,6 +203,7 @@ install: all
 	cp $(BIN_DIR)/demo_activate $(DEST_DIR)$(PREFIX)/bin/$(KMIP)
 	cp $(BIN_DIR)/demo_locate $(DEST_DIR)$(PREFIX)/bin/$(KMIP)
 	cp $(BIN_DIR)/demo_getattr $(DEST_DIR)$(PREFIX)/bin/$(KMIP)
+	cp $(BIN_DIR)/demo_rekey $(DEST_DIR)$(PREFIX)/bin/$(KMIP)
 	cp -r $(DOCS_DIR)/source/. $(DEST_DIR)$(PREFIX)/share/doc/$(KMIP)/src
 	cp $(SRC_DIR)/*.c $(DEST_DIR)$(PREFIX)/src/$(KMIP)
 	cp $(INC_DIR)/*.h $(DEST_DIR)$(PREFIX)/include/$(KMIP)
