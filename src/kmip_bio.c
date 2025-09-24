@@ -6,6 +6,10 @@
  * repository for more information.
  */
 
+#if ENABLE_WOLFSSL
+#include <wolfssl/options.h>
+#endif
+
 #include <openssl/ssl.h>
 #include <stdlib.h>
 #include <stdio.h>

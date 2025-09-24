@@ -1,0 +1,5 @@
+option('with-wolfssl',
+        type: 'boolean',
+        value: false,
+        description: 'with wolfSSL-support [default: off]',
+)
